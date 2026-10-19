@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// LUXE GROUP — Firestore 安全規則(Prototype 版)
+//
+// 使用方式:Firebase 主控台 → Firestore Database → 規則 → 貼上整份內容 → 發布。
+//
+// ⚠ 請先了解這份規則「做得到」與「做不到」的事:
+//   做得到:只有「已登入(含匿名登入)」的使用者才能讀寫;並檢查訂單資料格式,
+//           且訂單文件 ID 必須等於「團購ID__團員ID」,避免亂寫資料。
+//   做不到:無法分辨「誰是主召」、也無法證明「誰是王小美」。
+//           因為 Prototype 沒有真正的帳號登入,任何開啟本網站的人都能以匿名身分
+//           修改商品、設定或別人的訂單。這只適合小型、互相信任的測試。
+//   正式使用前,請改為 Firebase Authentication 真正登入(Email / Google / LINE 等),
+//   並用自訂權限(custom claims)限制只有主召能寫入 meta、products、members。
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // 團購活動設定、最終確認公告
+    match /meta/{docId} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    // 商品、團員名單
+    match /products/{productId} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+    match /members/{memberId} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    // 訂單:每位團員一張,文件 ID = 團購ID__團員ID
+    match /orders/{orderId} {
+      function validOrder() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['id', 'groupBuyId', 'memberId', 'items', 'status',
+                                 'createdAt', 'updatedAt', 'confirmedAt', 'reopenedAt'])
+          && d.id == orderId
+          && orderId == d.groupBuyId + '__' + d.memberId
+          && d.status in ['draft', 'confirmed', 'cancelled']
+          && d.items is list
+          && d.items.size() <= 50;
+      }
+
+      allow read: if signedIn();
+      allow create, update: if signedIn() && validOrder();
+      allow delete: if signedIn();
+    }
+  }
+}

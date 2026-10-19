@@ -1,0 +1,64 @@
+name: 測試、建置並發布到 GitHub Pages
+
+# 每次把程式更新到 main 分支,GitHub 的雲端電腦會自動:
+#   1. 安裝套件  2. 執行單元測試  3. 建置網站  4. 發布到 GitHub Pages
+# 你的電腦不需要安裝 Node.js。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 也可以在 Actions 頁面手動按「Run workflow」
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安裝套件
+        run: npm install --no-audit --no-fund
+
+      - name: 執行單元測試
+        run: npm test
+
+      - name: 建置網站
+        run: npm run build
+        env:
+          # 這些是在 GitHub 儲存庫 Settings → Secrets and variables → Actions → Variables 設定的值。
+          # Firebase 網頁設定是「專案識別資訊」不是密碼;真正的保護來自 Firestore 規則。
+          # 沒有設定時,網站會以「本機測試模式」運作(資料不會同步)。
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_ADMIN_PIN: ${{ vars.VITE_ADMIN_PIN }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
